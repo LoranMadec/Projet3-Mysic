@@ -1,2 +1,7 @@
 chromium
 chromium-driver
+libappindicator3-1
+libx11-6
+libxext6
+libxrender1
+libxtst6
