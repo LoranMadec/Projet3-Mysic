@@ -16,7 +16,7 @@ pyperclip==1.9.0
 helium==5.1.0
 setuptools==75.1.0
 chromium
-libappindicator3-1
+libappindicator3-1==0.29.4
 libx11-6
 libxext6
 libxrender1
