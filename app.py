@@ -13,6 +13,9 @@ from helium import *
 import mouse
 import pyperclip
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
 from pandas.api.types import (
     is_categorical_dtype,
     is_datetime64_any_dtype,
@@ -213,6 +216,14 @@ def rechercher_track(id_track):
 
 def generer_musique(prompt):
 
+    options = Options()
+    options.add_argument("--headless")  # Indispensable pour Streamlit
+    options.add_argument("--no-sandbox")  # Très important pour Streamlit (résout souvent les problèmes)
+    options.add_argument("--disable-dev-shm-usage")  # Important pour Streamlit (problèmes de mémoire partagée)
+    options.add_argument("--remote-debugging-port=9222") # Ajoute ce port
+
+    driver = webdriver.Chrome(options=options)
+
     # Ouvrir le navigateur et aller sur le site riffusion
     browser = start_chrome()
     go_to('https://www.riffusion.com')
@@ -373,7 +384,7 @@ with tab1:
                             col1, col2 = st.columns([1, 2])
                             with col1:
                                 if album_picture:
-                                    st.image(album_picture)
+                                    st.image(album_picture,)
                                 else:
                                     st.image(url_image_album_vide, width=250)
 
