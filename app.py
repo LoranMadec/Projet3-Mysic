@@ -1,88 +1,117 @@
 import streamlit as st
-import requests
+import pandas as pd
+import gdown
 import json
-from tmdbv3api import TMDb, Movie
 import streamlit.components.v1 as components
 from streamlit.components.v1 import html
 
-###
-### Création des fonctions
-###
+import time
+import numpy as np
+import requests
 
-# Fonction pour rechercher un film et obtenir ses informations
-def rechercher_film(titre):
+from helium import *
+import mouse
+import pyperclip
+
+from pandas.api.types import (
+    is_categorical_dtype,
+    is_datetime64_any_dtype,
+    is_numeric_dtype,
+    is_object_dtype,
+)
+
+import google.generativeai as genai
+
+GOOGLE_API_KEY='AIzaSyBQLR4y1s7SycCHfBLbJSggFJaRGMo2Zgo'
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Clé pour Riffusion
+user = 'laurent.lolo.madec@gmail.com'
+pwd='H3c+Y8t*75<^)CD'
+
+###
+### Définition des fonctions
+###
+# Charger les données avec mise en cache
+@st.cache_data
+
+# Fonction pour charger les données à partir d'un fichier CSV
+def load_data():
+    df_original = pd.read_csv("df_streamlit.csv")
+    suggestions = df_original['TitreIA'].tolist()
+    df_result = df_original[["titre", "artists", "release_date"]]
+    df = df_original[["id", "titre", "popularity", "artists", "release_date", "decennie", "durée", "genres", "TitreIA"]]
+    # renvoi la liste des genres classés par ordre alphabétique
+    list_genres = sorted(df['genres'].str.split(', ').explode().unique()) 
+    return df, df_result, suggestions, list_genres
+
+# Fonction pour charger les données à partir d'un fichier JSON => pas utilisé car moins performante qu'avec le CSV
+def load_data2():
+    # Charger fichier JSON dans un DataFrame
+    df_original = pd.read_json("df_streamlit.json")
+    suggestions = df_original['Combined'].tolist()
+    df = df_original[["id", "titre", "popularity", "artists", "release_date", "decennie", "durée", "genres", "TitreIA"]]
+    return df, suggestions
+
+
+def obtenir_track(query,genre,decennie):
     try:
-        film = Movie()
-        resultats = film.search(titre)
-        if resultats:
-            res = resultats[0]  # Prendre le premier résultat
-            film_id = res.id
-            # Faire une requête pour obtenir les crédits (acteurs)
-            credits_url = f'https://api.themoviedb.org/3/movie/{film_id}/credits?api_key={tmdb.api_key}&language=fr'
-            credits_response = requests.get(credits_url)
-            # Faire une requête pour obtenir les genres
-            genres_url = f'https://api.themoviedb.org/3/movie/{film_id}?api_key={tmdb.api_key}&language=fr'
-            details_response = requests.get(genres_url)
-            acteurs = 'Non disponible'
-            genres = 'Non disponible'
-            duree = 'Non disponible'
-            if credits_response.status_code == 200:
-                credits_data = credits_response.json()
-                acteurs = ', '.join([actor['name'] for actor in credits_data['cast'][:5]])  # Prendre les 5 premiers acteurs
-            if details_response.status_code == 200:
-                details_data = details_response.json()
-                genres = ', '.join([genre['name'] for genre in details_data.get('genres', [])])  # Récupérer les genres
-                runtime = details_data.get('runtime')  # Durée en minutes
-                duree = convertir_duree(runtime) if runtime else "Non disponible"
-            note = res.vote_average if res.vote_average is not None else 0
-            note_arrondie = round(note, 1)  # Arrondi à 1 chiffre après la virgule
-            return {
-                'Titre': res.title,
-                'Année': res.release_date,
-                'Acteurs': acteurs,
-                'Genres': genres,  # Ajout du genre
-                'Note': note_arrondie,  # Utilisation de la note arrondie
-                'Synopsis': res.overview,
-                'Durée': duree,
-                'Affiche': f"https://image.tmdb.org/t/p/w500{res.poster_path}" if res.poster_path else '',
-                'Id': film_id,
-                'GenresListe': details_data.get('genres', []),  # Retourner la liste des genres
-                'BandeAnnonce': obtenir_bande_annonce(film_id)  # Ajouter la bande annonce
-            }
+        if query != 'all':
+            if genre == 'all':
+                if decennie == 'all':
+                    results = df_tracks[df_tracks['TitreIA'].str.contains(query, case=False, na=False)]
+                else:
+                    results = df_tracks[(df_tracks['TitreIA'].str.contains(query, case=False, na=False)) & (df_tracks['decennie'] == decennie)]
+            else:
+                if decennie == 'all':
+                    results = df_tracks[(df_tracks['TitreIA'].str.contains(query, case=False, na=False)) & (df_tracks['genres'].str.contains(genre, case=False, na=False))]
+                else:
+                    results = df_tracks[(df_tracks['TitreIA'].str.contains(query, case=False, na=False)) & (df_tracks['genres'].str.contains(genre, case=False, na=False)) & (df_tracks['decennie'] == decennie)]
         else:
-            return None
-    except Exception as e:
-        st.error("Euhhh JB j'ai une question1")
-        return None
-    
-# Fonction pour obtenir l'ID de la bande-annonce YouTube
-def obtenir_bande_annonce(film_id):
-    try:
-        video_url = f'https://api.themoviedb.org/3/movie/{film_id}/videos?api_key={tmdb.api_key}&language=fr'
-        response = requests.get(video_url)
-        if response.status_code == 200:
-            videos = response.json().get('results', [])
-            for video in videos:
-                if video['site'] == 'YouTube' and video['type'] == 'Trailer':
-                    return video['key']  # Retourner l'ID de la vidéo YouTube
-        return None  # Retourne None si aucune bande-annonce trouvée
-    except Exception as e:
-        st.error("Euhhh JB j'ai une question2")
-        return None
-    
-def obtenir_suggestions_film(query):
-    try:
-        search_url = f"https://api.themoviedb.org/3/search/movie?api_key={tmdb.api_key}&query={query}&language=fr"
-        response = requests.get(search_url)
-        if response.status_code == 200:
-            results = response.json().get('results', [])
-            suggestions = [result['title'] for result in results[:6]]  # Limiter à 6 suggestions
-            return suggestions
-        return []
+            if genre == 'all':
+                if decennie != 'all':
+                    results = df_tracks[df_tracks['decennie'] == decennie]
+            else:
+                if decennie == 'all':
+                    results = df_tracks[df_tracks['genres'].str.contains(genre, case=False, na=False)]
+                else:
+                    results = df_tracks[(df_tracks['genres'].str.contains(genre, case=False, na=False)) & (df_tracks['decennie'] == decennie)]
+
+        return results
     except Exception as e:
         st.error("Euhhh JB j'ai une question3")
         return []
-    
+
+# Fonction pour obtenir images album et artists + extrait audio d'une musique à partir de l'API Deezer
+def get_track_preview(artist, track):
+    base_url = "https://api.deezer.com/search"
+    params = {
+        "q": f"artist:'{artist}' track:'{track}'",
+        "limit": 1  # Limiter la recherche à une seule correspondance
+    }
+
+    response = requests.get(base_url, params=params)
+
+    if response.status_code == 200:
+        data = response.json()
+        # Check if the 'data' key exists and contains any tracks
+        if data.get('data') and len(data['data']) > 0:
+            track_info = data['data'][0]
+            preview_url = track_info.get('preview')
+            link_track = track_info.get('link')
+            # Access artist and album information from the track data
+            artist_picture = track_info.get('artist', {}).get('picture_medium')
+            album_picture = track_info.get('album', {}).get('cover_medium')
+            album_titre = track_info.get('album', {}).get('title')
+            if preview_url:
+                return preview_url, link_track, artist_picture, album_picture, album_titre
+            else:
+                return None, None, None, None, None
+        else:
+            return None, None, None, None, None
+    else:
+        return None, None, None, None, None
+  
 # Fonction pour charger un fichier JSON
 def charger_json(chemin):
     try:
@@ -92,181 +121,608 @@ def charger_json(chemin):
         st.error("Erreur JSON : ",e)
         return []
     
-# Chemins des fichiers JSON pour chaque genre
+# Chemins des fichiers JSON pour chaque genre et par décennie
 chemins_json = {
-    'Action': "./Films_Genre_Action.json",
-    'Adventure': "./Films_Genre_Adventure.json",
-    'War': "./Films_Genre_War.json",
-    'Western': "./Films_Genre_Western.json",
-    'Thriller': "./Films_Genre_Thriller.json",
-    'Sci-Fi': "./Films_Genre_Sci-Fi.json",
-    'Romance': "./Films_Genre_Romance.json",
-    'Mystery': "./Films_Genre_Mystery.json",
-    'Music': "./Films_Genre_Music.json",
-    'Horror': "./Films_Genre_Horror.json",
-    'History': "./Films_Genre_History.json",
-    'Film-Noir': "./Films_Genre_Film-Noir.json",
-    'Fantasy': "./Films_Genre_Fantasy.json",
-    'Family': "./Films_Genre_Family.json",
-    'Drama': "./Films_Genre_Drama.json",
-    'Crime': "./Films_Genre_Crime.json",
-    'Comedy': "./Films_Genre_Comedy.json",
-    'Biography': "./Films_Genre_Biography.json",
-    'Animation': "./Films_Genre_Animation.json",
-    'ALL': "./Films_ALL.json"  # Ajout du fichier Films_ALL.json
+    'Classical': "./Classical.json",
+    'Country': "./Country.json",
+    'Electronic-Dance': "./Electronic-Dance.json",
+    'Hip-Hop/Rap': "./Hip-Hop-Rap.json",
+    'Jazz': "./Jazz.json",
+    'Latin': "./Latin.json",
+    'Pop': "./Pop.json",
+    'RB-Soul': "./RB-Soul.json",
+    'Reggae': "./Reggae.json",
+    'Rock': "./Rock.json",
+    '1920': "./Musicalite_1920.json",
+    '1930': "./Musicalite_1930.json",
+    '1940': "./Musicalite_1940.json",
+    '1950': "./Musicalite_1950.json",
+    '1960': "./Musicalite_1960.json",
+    '1970': "./Musicalite_1970.json",
+    '1980': "./Musicalite_1980.json",
+    '1990': "./Musicalite_1990.json",
+    '2000': "./Musicalite_2000.json",
+    '2010': "./Musicalite_2010.json",
+    '2020': "./Musicalite_2020.json" 
 }
 
-# Fonction pour obtenir les recommandations d'un film en fonction de son genre
-def get_recommendations_par_genre(genre, id_film):
+# Fonction pour obtenir les recommandations d'un track en fonction de son genre
+def get_recommendations_par_genre(genre, id_track):
     recommendations = []
     try:
         if genre in chemins_json:
             genre_json = charger_json(chemins_json[genre])
             for item in genre_json:
-                if item['id_film'] == id_film:
-                    for i in range(1, 7):  # Pour les 5 recommandations possibles
+                if item['id_track'] == id_track:
+                    for i in range(1, 4):  # Pour les 3 recommandations possibles
                         reco_id = item.get(f'id_reco{i}')
                         if reco_id:
                             recommendations.append(reco_id)
         return recommendations
     except Exception as e:
         # Afficher l'erreur dans Streamlit
-        st.error("Erreur reco_genre : ",e)
+        st.error(f"Erreur reco_genre : {e}")
         return []
     
-# Fonction pour obtenir des recommandations globales depuis Films_ALL.json
-def get_recommendations_globale(id_film):
+
+# Fonction pour obtenir les recommandations d'un track en fonction de sa décennie
+def get_recommendations_par_decennie(decennie, id_track):
     recommendations = []
     try:
-        all_json = charger_json(chemins_json['ALL'])  # Charger le fichier global
-        for item in all_json:
-            if item['id_film'] == id_film:
-                for i in range(1, 6):  # Pour les 5 recommandations possibles
-                    reco_id = item.get(f'id_reco{i}')
-                    if reco_id:
-                        recommendations.append(reco_id)
+        decennie_str = str(decennie)
+        if decennie_str in chemins_json:
+            decennie_json = charger_json(chemins_json[decennie_str])
+            for item in decennie_json:
+                if item['id_track'] == id_track:
+                    for i in range(1, 4):  # Pour les 3 recommandations possibles
+                        reco_id = item.get(f'id_reco{i}')
+                        if reco_id:
+                            recommendations.append(reco_id)
         return recommendations
+
     except Exception as e:
-        st.error("Erreur reco_globale : ",e)
+        # Afficher l'erreur dans Streamlit
+        st.error(f"Erreur reco_decennie : {e}")
         return []
 
-###
-### Chargement de la page
-###
+# Fonction pour rechercher une chanson et obtenir ses informations
+def rechercher_track(id_track):
+    try:
+        resultats = df_tracks[df_tracks['id'] == id_track]
+        if not resultats.empty:
+            res = resultats.iloc[0]  # Prendre le premier résultat
+            return {
+                'Titre': res.titre,
+                'TitreIA': res.TitreIA,
+                'Artiste': res.artists,
+                'Décennie': res.decennie,
+                'DateSortie': res.release_date,
+                'Genre': res.genres,
+                'NotePopularité': res.popularity,
+                'Durée': res.durée,
+                'Id': res.id
+            }
+        else:
+            return None
+    except Exception as e:
+        st.error("Euhhh JB j'ai une question1")
+        return None 
 
-st.set_page_config(page_title="Application de recommandation de films",layout="wide")
-st.logo("https://baptistedrapeau.wordpress.com/wp-content/uploads/2019/02/logo-cave-c3a0-film-rond-blanc-noir.png", size="large", link=None, icon_image=None)
+
+# Fonction pour générer une musique à partir d'un prompt
+
+def generer_musique(prompt):
+
+    # Ouvrir le navigateur et aller sur le site riffusion
+    browser = start_chrome()
+    go_to('https://www.riffusion.com')
+    # Cliquez sur le bouton Login
+    click('Login')
+    # Cliquez sur le bouton Continue with Discord
+    click('Continue with Discord')
+    time.sleep(1)
+
+
+    # Remplir le formulaire avec E-mail = user et Password = pwd
+    write(user, into='E-MAIL OU NUMÉRO DE TÉLÉPHONE*')
+    write(pwd, into='MOT DE PASSE*')
+    # Cliquez sur le bouton Connexion
+    click('Connexion')
+    # Cliquez sur le texte 
+    click('Accéder à ton adresse')
+    # Positionner la souris au milieu de l'écran
+    mouse.move(500, 500)
+    # Scroll down
+    mouse.wheel(-1)
+    # Attendre 0.5 secondes
+    time.sleep(0.2)
+    # Cliquez sur le bouton Connexion
+    click('Autoriser')
+    # Attendre 1 secondes
+    time.sleep(0.2)    
+    
+    # Click Sur Create the music you imagine...
+    click('Create the music you imagine...')
+
+    # Ecrire le texte dans le champ Create the music you imagine...
+    write(prompt, into='Create the music you imagine...')
+    # Positionner la souris au milieu de l'écran
+    mouse.move(900, 350)
+    mouse.click(button='left')
+
+    time.sleep(55)
+
+    # Cliquez sur le 1er bouton More options
+    click('More options')
+    # Cliquez sur le bouton Copy link
+    click('Copy link')
+    # Récupérer le lien copié dans le presse-papier
+    lien = pyperclip.paste()
+    # Fermer le navigateur
+    kill_browser()
+
+    return lien
+
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+# --- PAGE CONFIGURATION ---
+
+st.set_page_config(page_title = "Application de recommandations de musique", page_icon = ":notes_de_musique:", layout = "wide")
+
+# Removing whitespace from the top of the page
+st.markdown("""
+<style>
+.css-18e3th9 { padding-top: 0rem; padding-bottom: 10rem; padding-left: 5rem; padding-right: 5rem; }
+.css-1d391kg { padding-top: 3.5rem; padding-right: 1rem; padding-bottom: 3.5rem; padding-left: 1rem; }
+</style>""", unsafe_allow_html=True)
+st.logo("https://thumbs.dreamstime.com/z/music-logo-icon-vector-design-illustration-template-symbol-sound-element-musical-audio-modern-graphic-creative-abstract-company-170538718.jpg", size="large", link=None, icon_image=None)
 
 # Haut de la page
 st.markdown('<a id="top"></a>', unsafe_allow_html=True)  # Marqueur pour retourner en haut de la page
 
-tab1, tab2 = st.tabs(["|   Recommandations de film   |", "|   KPIs sur la Creuse et le cinéma   |"])
+url_image_album_vide = "https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/eb777e7a-7d3c-487e-865a-fc83920564a1/d7kpm65-437b2b46-06cd-4a86-9041-cc8c3737c6f0.jpg/v1/fill/w_800,h_800,q_75,strp/no_album_art__no_cover___placeholder_picture_by_cmdrobot_d7kpm65-fullview.jpg?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7ImhlaWdodCI6Ijw9ODAwIiwicGF0aCI6IlwvZlwvZWI3NzdlN2EtN2QzYy00ODdlLTg2NWEtZmM4MzkyMDU2NGExXC9kN2twbTY1LTQzN2IyYjQ2LTA2Y2QtNGE4Ni05MDQxLWNjOGMzNzM3YzZmMC5qcGciLCJ3aWR0aCI6Ijw9ODAwIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmltYWdlLm9wZXJhdGlvbnMiXX0.8yjX5CrFjxVH06LB59TpJLu6doZb0wz8fGQq4tM64mg"
+
+tab1, tab2 = st.tabs(["|   MyZic IA   |", "|   KPIs sur MyZic   |"])
+
+# Importer les données
+df_tracks, df_result, suggestions, list_genres = load_data()
 
 with tab1:
-    # Initialiser l'objet TMDb et définir la clé API
-    tmdb = TMDb()
-    tmdb.api_key = '5705ee01faebcd87a6faed03885adae0'
-    tmdb.language = 'fr'
-    def convertir_duree(minutes):
-        if not isinstance(minutes, int) or minutes <= 0:
-            return "Non disponible"
-        heures = minutes // 60
-        reste_minutes = minutes % 60
-        return f"{heures}h {reste_minutes}min"
-   
-    # Interface Streamlit
-    st.title("Trouvons ensemble le  film qui va illuminer votre soirée !")
-    # Initialiser la variable `search_input` dans `session_state` si elle n'existe pas
-    if 'search_input' not in st.session_state:
-        st.session_state.search_input = ''
-        st.rerun()
-    # Afficher la barre de recherche
-    choixfilm = st.text_input("Recherche : ", value=st.session_state.search_input)
-    # Mettre à jour la valeur de `search_input` à chaque modification de la barre de recherche
-    if choixfilm != st.session_state.search_input:
-        st.session_state.search_input = choixfilm
-        st.rerun()
-    if choixfilm:
-        suggestions = obtenir_suggestions_film(choixfilm)
-        if suggestions:
-            selected_film = st.selectbox("Titre similaire :", suggestions)
-            if selected_film:
-                film_info = rechercher_film(selected_film)
-                if film_info:
-                    # Affichage de l'affiche du film et des informations
-                    col1, col2 = st.columns([1, 2])
-                    with col1:
-                        if film_info['Affiche']:
-                            st.image(film_info['Affiche'])
-                    with col2:
-                        st.write(f"**Titre :** {film_info['Titre']}")
-                        st.write(f"**Année :** {film_info['Année']}")
-                        st.write(f"**Acteurs :** {film_info['Acteurs']}")
-                        st.write(f"**Genres :** {film_info['Genres']}")
-                        st.write(f"**Note :** {film_info['Note']}")
-                        st.write(f"**Synopsis :** {film_info['Synopsis']}")
-                        st.write(f"**Durée :** {film_info['Durée']}")
-                    # Afficher la bande-annonce YouTube si disponible
-                    bande_annonce = film_info['BandeAnnonce']
-                    if bande_annonce:
-                        st.markdown(f'<iframe width="100%" height="500" src="https://www.youtube.com/embed/{bande_annonce}" frameborder="0" allowfullscreen></iframe>', unsafe_allow_html=True)
-                    # Obtenir le genre du film et charger les recommandations
-                    genres = [genre['name'] for genre in film_info['GenresListe']]
-                    recommendations = []
-                    for genre in genres:
-                        recommendations.extend(get_recommendations_par_genre(genre, film_info['Id']))
-                    # Ajouter les recommandations globales
-                    recommendations.extend(get_recommendations_globale(film_info['Id']))
-                    # Filtrer les films recommandés pour éviter les doublons
-                    recommendations = list(set(recommendations))  # Supprimer les doublons
-                    recommendations = recommendations[:5]  # Limiter à 5 films
-                    # Afficher les recommandations
-                    # Afficher les recommandations sous forme d'affiches avec titres seulement
-                    if recommendations:
-                        st.subheader("**Vous avez apprécié ? Voici des recommandations qui pourraient vous plaire !**")
-                        col1, col2, col3, col4, col5 = st.columns(5)  # Créer 5 colonnes pour les affiches
-                        columns = [col1, col2, col3, col4, col5]
-                        for i, reco_id in enumerate(recommendations):
-                            reco_film = Movie()
-                            reco_film_info = reco_film.details(reco_id)
-                            if reco_film_info:
-                                with columns[i]:  # Affichage dans les colonnes créées
-                                    if reco_film_info.poster_path:
-                                        st.image(f"https://image.tmdb.org/t/p/w500{reco_film_info.poster_path}", use_container_width=True)  # Affiche la même taille que la colonne de texte
-                                    st.write(f"**{reco_film_info.title}**")  # Affichage du titre des films recommandés
-                                    # Ajouter un bouton sous chaque affiche
-                                    if st.button(f"Plus de détails...", key=reco_film_info.id):
-                                            st.session_state.search_input = reco_film_info.title  # Remplacer le titre actuel par celui de la reco
-                                            st.rerun()  # Recharger la page pour afficher le film sélectionné dans la barre de recherche
- 
-            # Retourner en haut de la page
-            st.markdown('<a href="#top">Retour en haut de la page</a>', unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3],border=True)
+    with col1:
+        st.subheader("Filtres")
+        # Recherche d'une chanson 
+        # Barre de recherche
+        if 'search_input' not in st.session_state:
+            st.session_state.search_input = ''
+            st.rerun()
+        # Afficher la barre de recherche
+        choixtrack = st.text_input("Recherche une chanson ou un artiste : ", value=st.session_state.search_input)
+        # Choix du genre avec afficher le texte 'choisir un genre' dans la liste déroulante
+        choixgenre = st.selectbox("Choisis un genre :",list_genres, placeholder="dans cette liste", index=None)
+
+        # choix décennie triée par ordre décroissant
+        choixdecennie = st.selectbox("Choisis une décennie :", sorted(df_tracks['decennie'].unique(), reverse=True), placeholder="dans cette liste", index=None)
+        
+    with col2:
+        stop=0
+        if choixtrack:
+            if choixgenre:
+                results = obtenir_track(choixtrack,choixgenre,'all')
+                if choixdecennie:
+                    results = obtenir_track(choixtrack,choixgenre,choixdecennie)
+            elif choixdecennie:
+                results = obtenir_track(choixtrack,'all',choixdecennie)
+            else:
+                results = obtenir_track(choixtrack,'all','all')
+        else:
+            if choixgenre:
+                results = obtenir_track('all',choixgenre,'all')
+                if choixdecennie:
+                    results = obtenir_track('all',choixgenre,choixdecennie)
+            elif choixdecennie:
+                results = obtenir_track('all','all',choixdecennie)
+            else:
+                st.info("Recherche une chanson ou un artiste et laisse notre IA te surprendre !")
+                stop=1
+
+        if not stop:
+
+            # Trier les résultats par popularité
+            results = results.sort_values(by='popularity', ascending=False)
+
+            # Afficher les résultats dans un DataFrame interactif avec la possibilité de sélectionner une ligne via la première colonne
+            st.info("Sélectionne une chanson et laisse notre IA te surprendre !")
+            edited_df = st.dataframe(results[['id','popularity','artists','titre','release_date']],
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                                        "id": None,
+                                        "popularity": None,
+                                        "artists": "Artiste",
+                                        "titre": "Titre",
+                                        "release_date": "Date de sortie"},
+                        on_select="rerun",
+                        height=350,
+                        selection_mode="single-row"
+                        )
+            # Afficher d'id de la ligne sélectionnée
+            selection = edited_df.selection.rows
+
+            if selection:
+                id_selected = results.iloc[selection[0]]['id']
+
+                if not results.empty:
+                    selected_track_id = id_selected
+                    TitreIA_Liste_Genre = []
+                    TitreIA_Liste_Dec = []
+                    if selected_track_id:
+                        track_info = rechercher_track(selected_track_id)
+                        if track_info:
+                            # Ajout du titre IA dans la liste TitreIA_Liste
+                            TitreIA_Liste_Genre.append(track_info['TitreIA'])
+                            TitreIA_Liste_Dec.append(track_info['TitreIA'])
+                            artist_name = track_info['Artiste']
+                            track_name = track_info['Titre']
+                            preview, link, artist_picture, album_picture, album_titre = get_track_preview(artist_name, track_name)
+
+                            # Affichage du titre de la chanson et de l'album
+                            st.write(f"**{album_titre} - {track_info['Titre']}**")
+                            # Affichage de l'affiche de la chanson et de ses informations
+                            col1, col2 = st.columns([1, 2])
+                            with col1:
+                                if album_picture:
+                                    st.image(album_picture)
+                                else:
+                                    st.image(url_image_album_vide, width=250)
+
+                                if preview:
+                                    st.audio(preview)
+                                else:
+                                    st.audio('https://audio.mp3')
+
+                            with col2:
+                                st.write(f"**Artiste :** {track_info['Artiste']}")
+                                st.write(f"**Date de Sortie :** {track_info['DateSortie']}")
+                                st.write(f"**Genres :** {track_info['Genre']}")
+                                st.write(f"**Durée :** {track_info['Durée']}")
+                                st.write(f"**Note de popularité :** {track_info['NotePopularité']}")
+
+                            # Obtenir le genre de la chanson et charger les recommandations du même genre
+                            # 1er genre avant la , si plusieurs genres
+                            if ',' in track_info['Genre']:
+                                genres = track_info['Genre'].split(',')[0]
+                            else:
+                                genres = track_info['Genre']
+                    
+                            recommendationsgenre = []
+                            recommendationsgenre.extend(get_recommendations_par_genre(genres, selected_track_id))
+                            # Filtrer les tracks recommandés pour éviter les doublons
+                            recommendationsgenre = list(set(recommendationsgenre))  # Supprimer les doublons
+                            recommendationsgenre = recommendationsgenre[:3]  # Limiter à 3 tracks
+                            # Afficher les recommandations
+                            if recommendationsgenre:
+                                if st.button(f"**Check nos recommandations ''{genres}'' !**", use_container_width=True, type="primary"):
+                                    col1, col2, col3 = st.columns(3)  # Créer 3 colonnes pour les titres
+                                    columns = [col1, col2, col3]
+                                    for i, reco_id in enumerate(recommendationsgenre):
+                                        reco_track_info = rechercher_track(reco_id)
+                                        if reco_track_info:
+                                            # Ajout du titre IA dans la liste TitreIA_Liste
+                                            TitreIA_Liste_Genre.append(reco_track_info['TitreIA'])
+
+                                            with columns[i]:  # Affichage dans les colonnes créées
+                                                artist_name = reco_track_info['Artiste']
+                                                track_name = reco_track_info['Titre']
+                                                preview, link, artist_picture, album_picture, album_titre = get_track_preview(artist_name, track_name)
+
+                                                if album_picture:
+                                                    st.image(album_picture)
+                                                else:
+                                                    st.image(url_image_album_vide, width=250)
+                                                if preview:
+                                                    st.audio(preview)
+                                                else:
+                                                    st.audio('https://audio.mp3')
+                                                st.write(f"{reco_track_info['TitreIA']}")
+
+                            # Ajouter un bouton pour générer la music IA
+                            if st.button(f"Les recos ''{genres}'' de notre IA", key=f"generate_{selected_track_id}_IA", use_container_width=True):
+
+                                # Création du modèle de Chatbot musical
+                                model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+                                # Création du prompt système
+                                system_prompt = """
+                                Tu es un spécialiste de la musique. Tu donnes des réponses précises en les replaçant dans le contexte musical.
+                                """
+
+                                #Initialisation de l'historique avec le prompt système
+                                chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
+
+                                # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
+                                message = "Bonjour, peux-tu me proposer 3 chansons du même genre " + genres + "que la chanson suivante : " + track_info['TitreIA'] + " ?"   
+                                response = chat.send_message(message).text
+                                message2 = "Peux-tu m'afficher ces 3 chansons dans un dictionnaire JSON que tu mettra entre [] et uniquement ce dictionnaire JSON sans explication avec les index nommés titre et artiste pour chaque chaque chanson ?"   
+                                note = chat.send_message(message2).text
+
+                                # Recupération du dictionnaire de note qui est présent entre [] et le transformer en dictionnaire, avec suppression des [ et ] pour obtenir un dictionnaire
+                                dict_reco = note[note.find('['):note.find(']')+1]
+
+                                # Transformation de dict_reco en dictionnaire
+                                dict_reco = json.loads(dict_reco)
+
+                                col1, col2, col3 = st.columns(3)  # Créer 3 colonnes pour les titres
+                                columns = [col1, col2, col3]
+
+                                # Pour chaque élement de dict_reco, appel de rechercher_track
+                                for i in range(0,3):
+                                    titre = dict_reco[i]['titre']
+                                    artiste = dict_reco[i]['artiste']
+
+                                    with columns[i]:  # Affichage dans les colonnes créées
+                                        preview, link, artist_picture, album_picture, album_titre = get_track_preview(artiste, titre)
+
+                                        if album_picture:
+                                            st.image(album_picture)
+                                        else:
+                                            st.image(url_image_album_vide, width=250)
+                                        if preview:
+                                            st.audio(preview)
+                                        else:
+                                            st.audio('https://audio.mp3')
+                                        st.write(f"{dict_reco[i]['titre']} - {dict_reco[i]['artiste']}")
+
+
+                                st.write("**Vous trouverez ci-dessous la description du choix de notre IA !**")
+                                # Afficher tout le texte response après le premier caractère ':' trouvé
+                                st.write(response[response.find(':')+1:])
+
+
+                            # Ajouter un bouton pour générer la music IA
+                            if st.button(f"Laisses notre IA générer ta chanson ''{genres}''", key=f"generate_{selected_track_id}{genres}", use_container_width=True):
+                                for i, reco_id in enumerate(recommendationsgenre):
+                                    reco_track_info = rechercher_track(reco_id)
+                                    if reco_track_info:
+                                        # Ajout du titre IA dans la liste TitreIA_Liste
+                                        TitreIA_Liste_Genre.append(reco_track_info['TitreIA'])
+
+                                # Création du modèle de Chatbot musical
+                                model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+                                # Création du prompt système
+                                system_prompt = """
+                                Tu es un spécialiste de la musique. Tu donnes des réponses précises en les replaçant dans le contexte musical.
+                                """
+
+                                #Initialisation de l'historique avec le prompt système
+                                chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
+
+                                # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
+                                message = "Bonjour, peux-tu générer une phrase synthétique entre crochets de moins de 250 caractères en anglais, ainsi que l'explication en français de la constitution de cette phrase pour générer dans une autre IA une chanson à partir des 4 chansons suivantes : " + ', '.join(TitreIA_Liste_Genre)   
+                                response = chat.send_message(message).text
+
+                                note = response[response.find('['):response.find(']')+1]
+                                note = note.replace('"[','')
+                                note = note.replace(']"','')
+                                note = note.replace('[','')                                
+                                note = note.replace(']','')
+
+                                # Si note > 250 caractères, on complète pour que le positionnement de la souris soit OK
+                                if len(note) < 250:
+                                    if len(note) < 150:
+                                        note = note + ' ' * (450 - len(note)) + 'end'
+                                    else:
+                                        note = note + ' ' * (300 - len(note)) + 'end'                                        
+
+                                response = response.replace('"[','')
+                                response = response.replace(']"','')
+                                response = response.replace('[','')                                
+                                response = response.replace(']','')
+
+                                # Afficher tout le texte response après le premier caractère ':' trouvé
+                                st.write("**Avant d'écouter votre chanson, vous trouverez ci-dessous la description de celle-ci**")
+                                st.write(response)
+
+                                lien = generer_musique(note)
+                                st.write(f"**Voici le lien de votre musique générée via Riffusion :**")
+                                st.write(f"{lien}")
+
+
+                            # Obtenir la decennie de la chanson et charger les recommandations de cette decennie
+                            decennie = track_info['Décennie']           
+                            recommendationsdec = []
+                            recommendationsdec.extend(get_recommendations_par_decennie(decennie, selected_track_id))
+
+                            # Filtrer les tracks recommandés pour éviter les doublons
+                            recommendationsdec = list(set(recommendationsdec))  # Supprimer les doublons
+                            recommendationsdec = recommendationsdec[:3]  # Limiter à 3 tracks
+
+                            # Afficher les recommandations
+                            if recommendationsdec:
+                                if st.button(f"**Check nos recommandations de {decennie} !**",use_container_width=True, type="primary"):
+                                    col1, col2, col3 = st.columns(3)  # Créer 3 colonnes pour les titres
+                                    columns = [col1, col2, col3]
+                                    for i, reco_id in enumerate(recommendationsdec):
+                                        reco_track_info = rechercher_track(reco_id)
+
+                                        if reco_track_info:
+                                            # Ajout du titre IA dans la liste TitreIA_Liste
+                                            TitreIA_Liste_Dec.append(reco_track_info['TitreIA'])                                        
+
+                                            with columns[i]:  # Affichage dans les colonnes créées
+                                                artist_name = reco_track_info['Artiste']
+                                                track_name = reco_track_info['Titre']
+                                                preview, link, artist_picture, album_picture, album_titre = get_track_preview(artist_name, track_name)
+
+                                                if album_picture:
+                                                    st.image(album_picture)
+                                                else:
+                                                    st.image(url_image_album_vide, width=250)
+                                                if preview:
+                                                    st.audio(preview)
+                                                else:
+                                                    st.audio('https://audio.mp3')                                        
+                                                st.write(f"{reco_track_info['TitreIA']}")
+
+                            # Ajouter un bouton pour générer la music IA
+                            if st.button(f"Les recos {decennie} de notre IA", key=f"generate_{selected_track_id}_dec_IA", use_container_width=True):
+
+                                # Création du modèle de Chatbot musical
+                                model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+                                # Création du prompt système
+                                system_prompt = """
+                                Tu es un spécialiste de la musique. Tu donnes des réponses précises en les replaçant dans le contexte musical.
+                                """
+
+                                #Initialisation de l'historique avec le prompt système
+                                chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
+
+                                # Convertir decennie en chaîne de caractères
+                                decennie_str = str(decennie)
+
+                                # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
+                                message = "Bonjour, peux-tu me proposer 3 chansons de la même décennie " + decennie_str + " et avec les mêmes caractéristiques musicales que la chanson suivante : " + track_info['TitreIA'] + " ?"   
+                                response = chat.send_message(message).text
+                                message2 = "Peux-tu m'afficher ces 3 chansons dans un dictionnaire JSON que tu mettra entre [] et uniquement ce dictionnaire JSON sans explication avec les index nommés titre et artiste pour chaque chaque chanson ?"   
+                                note = chat.send_message(message2).text
+
+                                # Recupération du dictionnaire de note qui est présent entre [] et le transformer en dictionnaire, avec suppression des [ et ] pour obtenir un dictionnaire
+                                dict_reco = note[note.find('['):note.find(']')+1]
+
+                                # Transformation de dict_reco en dictionnaire
+                                dict_reco = json.loads(dict_reco)
+
+                                col1, col2, col3 = st.columns(3)  # Créer 3 colonnes pour les titres
+                                columns = [col1, col2, col3]
+
+                                # Pour chaque élement de dict_reco, appel de rechercher_track
+                                for i in range(0,3):
+                                    titre = dict_reco[i]['titre']
+                                    artiste = dict_reco[i]['artiste']
+
+                                    with columns[i]:  # Affichage dans les colonnes créées
+                                        preview, link, artist_picture, album_picture, album_titre = get_track_preview(artiste, titre)
+
+                                        if album_picture:
+                                            st.image(album_picture)
+                                        else:
+                                            st.image(url_image_album_vide, width=250)
+                                        if preview:
+                                            st.audio(preview)
+                                        else:
+                                            st.audio('https://audio.mp3')
+                                        st.write(f"{dict_reco[i]['titre']} - {dict_reco[i]['artiste']}")
+
+                                st.write("**Vous trouverez ci-dessous la description du choix de notre IA !**")
+                                # Afficher tout le texte response après le premier caractère ':' trouvé
+                                st.write(response[response.find(':')+1:])
+
+                            # Ajouter un bouton pour générer la music IA
+                            if st.button(f"Laisses notre IA générer ta chanson de {decennie}", key=f"generate_{selected_track_id}_{decennie}", use_container_width=True):
+                                for i, reco_id in enumerate(recommendationsdec):
+                                    reco_track_info = rechercher_track(reco_id)
+                                    if reco_track_info:
+                                        # Ajout du titre IA dans la liste TitreIA_Liste
+                                        TitreIA_Liste_Dec.append(reco_track_info['TitreIA'])
+
+                                # Création du modèle de Chatbot musical
+                                model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+                                # Création du prompt système
+                                system_prompt = """
+                                Tu es un spécialiste de la musique. Tu donnes des réponses précises en les replaçant dans le contexte musical.
+                                """
+
+                                #Initialisation de l'historique avec le prompt système
+                                chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
+
+                                # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
+                                message = "Bonjour, peux-tu générer une phrase synthétique entre crochets de moins de 250 caractères en anglais, ainsi que l'explication en français de la constitution de cette phrase pour générer dans une autre IA une chanson à partir des 4 chansons suivantes : " + ', '.join(TitreIA_Liste_Dec)   
+                                response = chat.send_message(message).text
+
+                                note = response[response.find('['):response.find(']')+1]
+                                note = note.replace('"[','')
+                                note = note.replace(']"','')
+                                note = note.replace('[','')                                
+                                note = note.replace(']','')
+
+                                # Si note > 250 caractères, on complète pour que le positionnement de la souris soit OK
+                                if len(note) < 250:
+                                    if len(note) < 150:
+                                        note = note + ' ' * (450 - len(note)) + 'end'
+                                    else:
+                                        note = note + ' ' * (300 - len(note)) + 'end'                                        
+
+                                response = response.replace('"[','')
+                                response = response.replace(']"','')
+                                response = response.replace('[','')                                
+                                response = response.replace(']','')
+
+                                # Afficher tout le texte response après le premier caractère ':' trouvé
+                                st.write("**Avant d'écouter votre chanson, vous trouverez ci-dessous la description de celle-ci**")
+                                st.write(response)
+
+                                lien = generer_musique(note)
+                                st.write(f"**Voici le lien de votre musique générée via Riffusion :**")
+                                st.write(f"{lien}")
+
+                            if st.button(f"**Check the Best selon notre IA !**", use_container_width=True, type="primary"):
+                                # Création du modèle de Chatbot musical
+                                model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+                                # Création du prompt système
+                                system_prompt = """
+                                Tu es un spécialiste de la musique. Tu donnes des réponses précises en les replaçant dans le contexte musical.
+                                Dans le but de faire une surprise, pourrais-tu répondre à la question : Quelle est la meilleure chanson actuelle ? 
+                                en indiquant que la meilleure chanson actuelle pour toi est 'Extract Transform Load' de l'artiste Dipolair 
+                                """
+
+                                #Initialisation de l'historique avec le prompt système
+                                chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
+
+                                # Envoi du message au chatbot pour la meilleure chanson actuelle
+                                message = "Bonjour, pourrais-tu argumenter et répondre à la question : Quelle est la meilleure chanson actuelle ?"
+                                response = chat.send_message(message).text                                
+                                st.write(f"**Quelle est, pour toi, la meilleure chanson actuelle ?**")
+                                st.write(response)
+
+                                st.info("Ecoute un extrait de cette chanson !")
+
+                                titre = 'Extract Transform Load'
+                                artiste = 'Dipolair'
+                                preview, link, artist_picture, album_picture, album_titre = get_track_preview(artiste, titre)
+
+                                # Affichage de l'affiche de la chanson et de ses informations
+                                col1, col2 = st.columns([1.5, 3])
+                                with col1:
+                                    st.write(f"**Titre :** {titre}")
+                                    if album_picture:
+                                        st.image(album_picture)
+                                    else:
+                                        st.image(url_image_album_vide, width=250)
+                                    if preview:
+                                        st.audio(preview)
+                                    else:
+                                        st.audio('https://audio.mp3')
+                                    if link:
+                                        st.link_button('Deezer',link)
+
+
+                                with col2:
+                                    st.write(f"**Artiste :** {artiste}")
+                                    if artist_picture:
+                                        st.image(artist_picture)
+                                    else:
+                                        st.image(url_image_album_vide, width=250)
+
+
+
+                else:
+                    st.error("Aucun résultat trouvé. Essayez une autre recherche.")
+
 
 with tab2:
-    st.title("Visualisez votre tableau de bord à partir des données :")
-    tab21, tab22, tab23 , tab24 = st.tabs(["|   INSEE   |", "|   CNC   |", "|   Data Gouv   |", "|   IMdB   |"])
-    with tab21:
-        # embed streamlit docs in a streamlit app - INSEE
-        components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjdlNWZiMmEtMmJmMy00ZjNjLWJjYWEtNmRkZDIxYTY5Mjc1IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-
-    with tab22:
-        # embed streamlit docs in a streamlit app - CNC
-        components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYzc4MzMxNzUtOWY5Ny00ZmE2LTlkYzMtNGY2YTkzZTdkN2QyIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-
-    with tab23:
-        # embed streamlit docs in a streamlit app - DataGouv
-        components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjIwMDdjN2MtY2NlNy00NmNlLWFlZjAtMWIxMTRlMzcxMGVkIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-    with tab24:
-        # embed streamlit docs in a streamlit app - IMDB
-        components.iframe("https://app.powerbi.com/view?r=eyJrIjoiNzdiYTQ5OTMtMGIxNy00NTk5LTkzOWItNzEwYmJhNGVmZmZmIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-
-
-css = '''
-<style>
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-    font-size:2rem;
-    }
-</style>
-'''
-
-st.markdown(css, unsafe_allow_html=True)
+    st.header("KPIs sur MyZic") 
