@@ -1,7 +1,9 @@
 chromium
 chromium-driver
+xvfb
 libappindicator3-1
 libx11-6
 libxext6
 libxrender1
 libxtst6
+xfonts-base

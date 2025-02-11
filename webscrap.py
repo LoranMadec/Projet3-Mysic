@@ -4,84 +4,54 @@ import mouse
 import pyperclip
 
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By  # Importez By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 
 user = 'laurent.lolo.madec@gmail.com'
 pwd='H3c+Y8t*75<^)CD'
 
+def driver_init():
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    return driver
+
 def generer_musique(prompt):
 
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Indispensable pour Streamlit
-    chrome_options.add_argument("--no-sandbox")  # *Essentiel* pour Streamlit
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Important pour Streamlit
-    chrome_options.add_argument("--remote-debugging-port=9222") # Ajoute ce port
+    driver = driver_init()
+    driver.get("https://www.riffusion.com")
 
-    # Chemin vers Chromium (CRUCIAL)
-    chromium_binary = "/usr/bin/chromium" # ou /usr/bin/chromium
-    chrome_options.binary_location = chromium_binary
+    try:
+    # Attendre au maximum 10 secondes que le bouton Login soit cliquable
+        login_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Generate')]")))
+        login_button.click()
 
-    service = Service(executable_path=chromium_binary) # Use Service object
+        discord_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Continue with Discord')]")))
+        discord_button.click()
 
-    # Ouvrir le navigateur et aller sur le site riffusion
-    browser = webdriver.Chrome(service=service, options=chrome_options)
+        time.sleep(2)
 
+        email_field = driver.find_element_by_xpath('//*[@id="email"]')))
+#        password_field = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="Mot de passe"]')))
+#        password_field = driver.find_element_by_xpath('//*[@id="Mot de passe"]')
+        
+        lien = "OK"
 
-
-    go_to('https://www.riffusion.com')
-    # Cliquez sur le bouton Login
-    click('Login')
-    # Cliquez sur le bouton Continue with Discord
-    click('Continue with Discord')
-    time.sleep(2)
-
-
-    # Remplir le formulaire avec E-mail = user et Password = pwd
-    write(user, into='E-MAIL OU NUMÉRO DE TÉLÉPHONE*')
-    write(pwd, into='MOT DE PASSE*')
-    # Cliquez sur le bouton Connexion
-    click('Connexion')
-    # Cliquez sur le texte 
-    click('Accéder à ton adresse')
-    # Déplacement de 2 tabulations et de 2 fleches vers le bas
-    actions = ActionChains(browser)
-    actions.send_keys(Keys.TAB).perform()
-    actions.send_keys(Keys.TAB).perform()
-
-    actions.send_keys(Keys.ARROW_DOWN).perform()
-    actions.send_keys(Keys.ARROW_DOWN).perform()
-
-    # Attendre 0.5 secondes
-    time.sleep(0.2)
-    # Cliquez sur le bouton Connexion
-    click('Autoriser')
-    # Attendre 1 secondes
-    time.sleep(0.2)    
-    
-    # Click Sur Create the music you imagine...
-    click('Create the music you imagine...')
-
-    # Ecrire le texte dans le champ Create the music you imagine...
-    write(prompt, into='Create the music you imagine...')
-    time.sleep(0.1)    
-    # Positionner la souris au milieu de l'écran
-    # Click Sur Entrée
-    actions.send_keys(Keys.ENTER).perform()
-
-    time.sleep(55)
-
-    # Cliquez sur le 1er bouton More options
-    click('More options')
-    # Cliquez sur le bouton Copy link
-    click('Copy link')
-    # Récupérer le lien copié dans le presse-papier
-    lien = pyperclip.paste()
-    # Fermer le navigateur
-#    browser.quit()
+    except TimeoutException:
+        print("Le bouton  n'a pas été trouvé après 10 secondes.")
+        lien ="Le bouton  n'a pas été trouvé après 10 secondes."
+    except Exception as e: # Pour les autres erreurs (par exemple, si le texte change)
+        print(f"Une autre erreur est survenue : {e}")
+        lien = f"Une autre erreur est survenue : {e}"
 
     return lien
 

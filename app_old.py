@@ -4,9 +4,21 @@ import gdown
 import json
 import streamlit.components.v1 as components
 from streamlit.components.v1 import html
+
 import time
 import numpy as np
 import requests
+
+from helium import *
+import mouse
+import pyperclip
+
+from selenium.webdriver.common.keys import Keys
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
 
 from pandas.api.types import (
     is_categorical_dtype,
@@ -14,12 +26,8 @@ from pandas.api.types import (
     is_numeric_dtype,
     is_object_dtype,
 )
-import google.generativeai as genai
-import os
-import base64
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(page_title = "Application de recommandations de musique", page_icon = ":notes_de_musique:", layout = "wide")
+import google.generativeai as genai
 
 GOOGLE_API_KEY='AIzaSyBQLR4y1s7SycCHfBLbJSggFJaRGMo2Zgo'
 genai.configure(api_key=GOOGLE_API_KEY)
@@ -28,9 +36,9 @@ genai.configure(api_key=GOOGLE_API_KEY)
 user = 'laurent.lolo.madec@gmail.com'
 pwd='H3c+Y8t*75<^)CD'
 
-############################################################################################################
-### Définition des fonctions################################################################################
-############################################################################################################
+###
+### Définition des fonctions
+###
 # Charger les données avec mise en cache
 @st.cache_data
 
@@ -41,10 +49,18 @@ def load_data():
     df_result = df_original[["titre", "artists", "release_date"]]
     df = df_original[["id", "titre", "popularity", "artists", "release_date", "decennie", "durée", "genres", "TitreIA"]]
     # renvoi la liste des genres classés par ordre alphabétique
-    list_genres = sorted(df['genres'].str.split(', ').explode().unique())
+    list_genres = sorted(df['genres'].str.split(', ').explode().unique()) 
     return df, df_result, suggestions, list_genres
 
-# Fonction pour afficher les tracks en fonction des filtres
+# Fonction pour charger les données à partir d'un fichier JSON => pas utilisé car moins performante qu'avec le CSV
+def load_data2():
+    # Charger fichier JSON dans un DataFrame
+    df_original = pd.read_json("df_streamlit.json")
+    suggestions = df_original['Combined'].tolist()
+    df = df_original[["id", "titre", "popularity", "artists", "release_date", "decennie", "durée", "genres", "TitreIA"]]
+    return df, suggestions
+
+
 def obtenir_track(query,genre,decennie):
     try:
         if query != 'all':
@@ -102,16 +118,16 @@ def get_track_preview(artist, track):
             return None, None, None, None, None
     else:
         return None, None, None, None, None
-
+  
 # Fonction pour charger un fichier JSON
 def charger_json(chemin):
     try:
         with open(chemin, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        st.error(f"❌ Erreur lors du chargement du JSON {chemin}: {str(e)}")  # ✅ Correction ici
+        st.error("Erreur JSON : ",e)
         return []
-
+    
 # Chemins des fichiers JSON pour chaque genre et par décennie
 chemins_json = {
     'Classical': "./Classical.json",
@@ -134,7 +150,7 @@ chemins_json = {
     '1990': "./Musicalite_1990.json",
     '2000': "./Musicalite_2000.json",
     '2010': "./Musicalite_2010.json",
-    '2020': "./Musicalite_2020.json"
+    '2020': "./Musicalite_2020.json" 
 }
 
 # Fonction pour obtenir les recommandations d'un track en fonction de son genre
@@ -151,9 +167,10 @@ def get_recommendations_par_genre(genre, id_track):
                             recommendations.append(reco_id)
         return recommendations
     except Exception as e:
-        st.error(f"⚠️ Erreur reco_genre : {e}")  # ✅ Correction ici
+        # Afficher l'erreur dans Streamlit
+        st.error(f"Erreur reco_genre : {e}")
         return []
-
+    
 
 # Fonction pour obtenir les recommandations d'un track en fonction de sa décennie
 def get_recommendations_par_decennie(decennie, id_track):
@@ -163,16 +180,17 @@ def get_recommendations_par_decennie(decennie, id_track):
         if decennie_str in chemins_json:
             decennie_json = charger_json(chemins_json[decennie_str])
             for item in decennie_json:
-                if item.get('id_track') == id_track:  # ✅ Utiliser `.get()` pour éviter KeyError
-                    for i in range(1, 4):  # ✅ Vérifier les 3 recommandations possibles
+                if item['id_track'] == id_track:
+                    for i in range(1, 4):  # Pour les 3 recommandations possibles
                         reco_id = item.get(f'id_reco{i}')
                         if reco_id:
                             recommendations.append(reco_id)
         return recommendations
-    except Exception as e:
-        st.error(f"⚠️ Erreur reco_decennie : {str(e)}")  # ✅ Correction ici
-        return []
 
+    except Exception as e:
+        # Afficher l'erreur dans Streamlit
+        st.error(f"Erreur reco_decennie : {e}")
+        return []
 
 # Fonction pour rechercher une chanson et obtenir ses informations
 def rechercher_track(id_track):
@@ -195,203 +213,92 @@ def rechercher_track(id_track):
             return None
     except Exception as e:
         st.error("Euhhh JB j'ai une question1")
-        return None
+        return None 
 
 
-# Fonction pour générer une musique à partir d'un prompt sur Riffusion
+# Fonction pour générer une musique à partir d'un prompt
+def generer_musique(prompt):
 
-def generer_musique(type,param):
+    options = Options()  # Crée un objet Options
+    # Ajoute tes options ici, par exemple :
+    options.add_argument("--headless")  # Mode sans tête
+    options.add_argument("--disable-gpu") # Souvent nécessaire en mode headless
+    options.add_argument('--ignore-certificate-errors')
 
-    # Création des dictionaires des urls et pistes audio par genre
-    dic_genre = {"Rock":"https://www.riffusion.com/riff/2ff9658a-efb6-4223-8470-3fe304b69556",
-                 "Pop":"https://www.riffusion.com/riff/4c7279a5-c90e-47cc-847d-91f8e0b10832",
-                 "Reggae":"https://www.riffusion.com/riff/5efcb6a3-750c-4c36-80dd-8fc2829192bd",
-                 "Latin":"https://www.riffusion.com/riff/081362aa-879d-4a06-b9f4-f163edabca02",
-                 "Jazz":"https://www.riffusion.com/riff/3fa868ea-242f-47fc-b99a-57794f890b67",
-                 "Electronic-Dance":"https://www.riffusion.com/riff/1473cf2a-8bf8-45c3-a4bd-61408a19804f",
-                 "Hip-Hop/Rap":"https://www.riffusion.com/riff/a84674e7-91c6-4327-b80f-485fd389fc04",
-                 "Country":"https://www.riffusion.com/riff/b75dd4f6-c5b2-4c86-8cdc-b3f434e06dee",
-                 "Classical":"https://www.riffusion.com/riff/6d52f5f4-491a-4469-9962-e7fd85877b58",
-                 "RB-Soul":"https://www.riffusion.com/riff/f44d025c-982d-41de-a93e-38ddb3f77403"}
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)  # Passe l'objet options
 
-    dic_genre_audio = {"Rock":"./Audio/Guardian's Flame.m4a",
-                        "Pop":"./Audio/Just Like Old Times.m4a",
-                        "Reggae":"./Audio/Two Streets, One Truth.m4a",
-                        "Latin":"./Audio/Baila Conmigo Esta Noche.m4a",
-                        "Jazz":"./Audio/Empty Table Blues.m4a",
-                        "Electronic-Dance":"./Audio/Tonight We Rise.m4a",
-                        "Hip-Hop/Rap":"./Audio/Night Shift Knowledge.m4a",
-                        "Country":"./Audio/That Screen Door's Been Quiet.m4a",
-                        "Classical":"./Audio/The Gardener's Farewell.m4a",
-                        "RB-Soul":"./Audio/Let The Storm Roll.m4a"}
+    # Maintenant, tu peux utiliser Helium :
+    from helium import set_driver, click
+    set_driver(driver) # Associe le driver à Helium
 
-    # Création du dictionaire des urls par décennie
-    dic_decennie = {"1920":"https://www.riffusion.com/riff/47293efb-385e-4051-b815-2e5255a3a1d8",
-                    "1930":"https://www.riffusion.com/riff/8c9eb6ea-c2ac-4b13-8b1a-ef7c7bbd4597",
-                    "1940":"https://www.riffusion.com/riff/34ded871-1b8b-4e3d-bfc3-1b9fbb221e74",
-                    "1950":"https://www.riffusion.com/riff/39a70308-f3fa-46f1-8dc3-8b8850129634",
-                    "1960":"https://www.riffusion.com/riff/31542784-0e1f-4531-acf8-df282232def5",
-                    "1970":"https://www.riffusion.com/riff/3a37c6b9-f811-4502-8b8e-e1e230ad2b2d",
-                    "1980":"https://www.riffusion.com/riff/ea2b1315-fd39-458b-8181-939b9da48790",
-                    "1990":"https://www.riffusion.com/riff/3b88a9f3-f7a8-4f8c-b0be-c94fc05e3487",
-                    "2000":"https://www.riffusion.com/riff/3bfa535b-1f34-4ce2-ab39-47c9b93cb80b",
-                    "2010":"https://www.riffusion.com/riff/f02b287e-2f7a-4fec-afe5-032232b7d750",
-                    "2020":"https://www.riffusion.com/riff/35258c2a-1a72-4d3e-b121-9e9cb9910a6b"}
+    go_to('https://www.riffusion.com')
 
-    dic_decennie_audio = {"1920":"./Audio/Borrowed Youth Blues.m4a",
-                            "1930":"./Audio/Watching You Dance.m4a",
-                            "1940":"./Audio/Coffee Stains.m4a",
-                            "1950":"./Audio/Café Des Amoureux.m4a",
-                            "1960":"./Audio/Dancing in the Grass.m4a",
-                            "1970":"./Audio/Dancing Through The Dark.m4a",
-                            "1980":"./Audio/Radio Time Machine.m4a",
-                            "1990":"./Audio/Screen Life Lies.m4a",
-                            "2000":"./Audio/Wide Open Spaces.m4a",
-                            "2010":"./Audio/Dancing in Disconnect.m4a",
-                            "2020":"./Audio/Dancing Through Screens.m4a"}
+    # Cliquez sur le bouton Login
+    click('Login')
+    # Cliquez sur le bouton Continue with Discord
+    click('Continue with Discord')
+    time.sleep(2)
+
+    # Remplir le formulaire avec E-mail = user et Password = pwd
+    write(user, into='E-MAIL OU NUMÉRO DE TÉLÉPHONE*')
+    write(pwd, into='MOT DE PASSE*')
+    # Cliquez sur le bouton Connexion
+    click('Connexion')
+    # Cliquez sur le texte 
+    click('Accéder à ton adresse')
+    # Déplacement de 2 tabulations et de 2 fleches vers le bas
+    actions = ActionChains(driver)
+    actions.send_keys(Keys.TAB).perform()
+    actions.send_keys(Keys.TAB).perform()
+
+    actions.send_keys(Keys.ARROW_DOWN).perform()
+    actions.send_keys(Keys.ARROW_DOWN).perform()
+
+    # Attendre 0.5 secondes
+    time.sleep(0.2)
+    # Cliquez sur le bouton Connexion
+    click('Autoriser')
+    # Attendre 1 secondes
+    time.sleep(0.2)    
     
-    if type == "genre":
-        lien = dic_genre[param]
-        audio = dic_genre_audio[param]
-    elif type == "decennie":
-        lien = dic_decennie[param]
-        audio = dic_decennie_audio[param]
-    else:
-        lien = "Aucune génération possible"
-        audio = "Aucune génération possible"     
+    # Click Sur Create the music you imagine...
+    click('Create the music you imagine...')
 
-    return lien,audio
+    # Ecrire le texte dans le champ Create the music you imagine...
+    write(prompt, into='Create the music you imagine...')
+    time.sleep(0.1)    
+    # Positionner la souris au milieu de l'écran
+    # Click Sur Entrée
+    actions.send_keys(Keys.ENTER).perform()
+
+    time.sleep(55)
+
+    # Cliquez sur le 1er bouton More options
+    click('More options')
+    # Cliquez sur le bouton Copy link
+    click('Copy link')
+    # Récupérer le lien copié dans le presse-papier
+    lien = pyperclip.paste()
+    # Fermer le navigateur
+#    browser.quit()
+
+    return lien
+
 
 #########################################################################################
-#############################          CSS   ############################################
 #########################################################################################
+#########################################################################################
+# --- PAGE CONFIGURATION ---
 
-#gère taille image logo
-st.markdown("""
-<style>
-img[data-testid="stLogo"] {height: 4rem;}
-</style>""", unsafe_allow_html=True)
+st.set_page_config(page_title = "Application de recommandations de musique", page_icon = ":notes_de_musique:", layout = "wide")
 
-
-# Appliquer le thème via st.markdown avec du CSS
-st.markdown(
-    """
-    <style>
-        :root {
-            --primary-color: #3393F1;
-            --background-color: #FFFFFF;
-            --secondary-background-color: #3393F1;
-            --text-color: #000000;
-            --font-family: 'Source Sans Pro';
-        }
-
-        html, body {
-            background-color: var(--background-color) !important;
-            color: 000000 !important;
-            font-family: var(--font-family) !important;
-            font-size: 18px !important;
-        }
-
-        .stButton > button {
-            border: 1px solid red !important; /* ✅ Bordure blanche pour meilleure visibilité */
-            font-weight: bold !important; /* ✅ Texte en gras */
-            border-radius: 5px !important; /* ✅ Arrondi des bords pour un meilleur design */
-            }
-
-        /* ✅ Change la couleur du bouton au survol */
-        .stButton > button:hover {
-            background-color: #D00D0D !important; /* ✅ Rouge plus foncé au survol */
-            color: white !important;
-            }
-
-        .stSidebar {
-            background-color: var(--secondary-background-color) !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown("""
-    <style>
-        /* Augmente l'espacement entre les onglets */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
-        }
-
-        /* Style général des onglets */
-        .stTabs [data-baseweb="tab"] {
-            height: 60px;  /* ✅ Augmente la hauteur */
-            white-space: pre-wrap;
-            background-color: #F20F0F !important;  /* ✅ Rouge forcé */
-            border-radius: 8px 8px 0 0;  /* ✅ Bords arrondis */
-            padding: 15px 30px;
-            color: white !important; /* ✅ Texte en blanc */
-            font-size: 48px !important;  /* ✅ Augmente la taille de la police */
-            font-weight: bold !important; /* ✅ Texte en gras */
-            text-align: center !important;
-        }
-
-        /* Style de l'onglet actif */
-        .stTabs [aria-selected="true"] {
-            background-color: #D00D0D !important; /* ✅ Rouge légèrement plus foncé */
-            color: white !important; /* ✅ Texte blanc */
-            font-size: 26px !important; /* ✅ Texte un peu plus grand pour l'onglet actif */
-            border-bottom: 4px solid white !important;  /* ✅ Ajoute une séparation visuelle */
-        }
-
-        /* ✅ Assure que le texte reste blanc dans tous les cas */
-        .stTabs [data-baseweb="tab"] * {
-            color: white !important;
-        }
-
-    </style>
-""", unsafe_allow_html=True)
-
-
-#bannière :
-# Convertir l'image en base64 pour l'afficher en HTML
-def get_base64_of_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode()
-# Charger l'image
-image_base64 = get_base64_of_image("image/banniere.png")
-# Code HTML/CSS pour afficher la bannière
-custom_html = f"""
-<div class="banner">
-    <img src="data:image/png;base64,{image_base64}" alt="Bannière">
-</div>
-<style>
-    .banner {{
-        width: 100%;
-        height: 200px;
-        overflow: hidden;
-        border-radius: 5px !important; /* ✅ Arrondi des bords pour un meilleur design */
-    }}
-    .banner img {{
-        width: 100%;
-        object-fit: cover;
-    }}
-</style>
-"""
-# Afficher le HTML pour la bannière
-st.markdown(custom_html, unsafe_allow_html=True)
-
-# Logo
-st.logo("./image/Logo.png", size="large", link=None, icon_image=None)
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-# Haut de la page
 # Removing whitespace from the top of the page
 st.markdown("""
 <style>
 .css-18e3th9 { padding-top: 0rem; padding-bottom: 10rem; padding-left: 5rem; padding-right: 5rem; }
 .css-1d391kg { padding-top: 3.5rem; padding-right: 1rem; padding-bottom: 3.5rem; padding-left: 1rem; }
 </style>""", unsafe_allow_html=True)
-
+st.logo("https://thumbs.dreamstime.com/z/music-logo-icon-vector-design-illustration-template-symbol-sound-element-musical-audio-modern-graphic-creative-abstract-company-170538718.jpg", size="large", link=None, icon_image=None)
 
 # Haut de la page
 st.markdown('<a id="top"></a>', unsafe_allow_html=True)  # Marqueur pour retourner en haut de la page
@@ -407,7 +314,7 @@ with tab1:
     col1, col2 = st.columns([1, 3],border=True)
     with col1:
         st.subheader("Filtres")
-        # Recherche d'une chanson
+        # Recherche d'une chanson 
         # Barre de recherche
         if 'search_input' not in st.session_state:
             st.session_state.search_input = ''
@@ -419,7 +326,7 @@ with tab1:
 
         # choix décennie triée par ordre décroissant
         choixdecennie = st.selectbox("Choisis une décennie :", sorted(df_tracks['decennie'].unique(), reverse=True), placeholder="dans cette liste", index=None)
-
+        
     with col2:
         stop=0
         if choixtrack:
@@ -497,11 +404,11 @@ with tab1:
                                     st.audio('https://audio.mp3')
 
                             with col2:
-                                st.write(f"🎤 **Artiste :** {track_info['Artiste']}")
-                                st.write(f"📅 **Date de Sortie :** {track_info['DateSortie']}")
-                                st.write(f"🎵 **Genres :** {track_info['Genre']}")
-                                st.write(f"⏳ **Durée :** {track_info['Durée']}")
-                                st.write(f"⭐ **Note de popularité :** {track_info['NotePopularité']}")
+                                st.write(f"**Artiste :** {track_info['Artiste']}")
+                                st.write(f"**Date de Sortie :** {track_info['DateSortie']}")
+                                st.write(f"**Genres :** {track_info['Genre']}")
+                                st.write(f"**Durée :** {track_info['Durée']}")
+                                st.write(f"**Note de popularité :** {track_info['NotePopularité']}")
 
                             # Obtenir le genre de la chanson et charger les recommandations du même genre
                             # 1er genre avant la , si plusieurs genres
@@ -509,7 +416,7 @@ with tab1:
                                 genres = track_info['Genre'].split(',')[0]
                             else:
                                 genres = track_info['Genre']
-
+                    
                             recommendationsgenre = []
                             recommendationsgenre.extend(get_recommendations_par_genre(genres, selected_track_id))
                             # Filtrer les tracks recommandés pour éviter les doublons
@@ -556,9 +463,9 @@ with tab1:
                                 chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
 
                                 # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
-                                message = "Bonjour, peux-tu me proposer 3 chansons du même genre " + genres + "que la chanson suivante : " + track_info['TitreIA'] + " ?"
+                                message = "Bonjour, peux-tu me proposer 3 chansons du même genre " + genres + "que la chanson suivante : " + track_info['TitreIA'] + " ?"   
                                 response = chat.send_message(message).text
-                                message2 = "Peux-tu m'afficher ces 3 chansons dans un dictionnaire JSON que tu mettra entre [] et uniquement ce dictionnaire JSON sans explication avec les index nommés titre et artiste pour chaque chaque chanson ?"
+                                message2 = "Peux-tu m'afficher ces 3 chansons dans un dictionnaire JSON que tu mettra entre [] et uniquement ce dictionnaire JSON sans explication avec les index nommés titre et artiste pour chaque chaque chanson ?"   
                                 note = chat.send_message(message2).text
 
                                 # Recupération du dictionnaire de note qui est présent entre [] et le transformer en dictionnaire, avec suppression des [ et ] pour obtenir un dictionnaire
@@ -614,13 +521,13 @@ with tab1:
                                 chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
 
                                 # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
-                                message = "Bonjour, peux-tu générer une phrase synthétique entre crochets de moins de 250 caractères en anglais, ainsi que l'explication en français de la constitution de cette phrase pour générer dans une autre IA une chanson à partir des 4 chansons suivantes : " + ', '.join(TitreIA_Liste_Genre) + " sans citer ces chansons dans la phrase synthétique, mais en insistant sur les caratéristiques du genre"
+                                message = "Bonjour, peux-tu générer une phrase synthétique entre crochets de moins de 250 caractères en anglais, ainsi que l'explication en français de la constitution de cette phrase pour générer dans une autre IA une chanson à partir des 4 chansons suivantes : " + ', '.join(TitreIA_Liste_Genre)   
                                 response = chat.send_message(message).text
 
                                 note = response[response.find('['):response.find(']')+1]
                                 note = note.replace('"[','')
                                 note = note.replace(']"','')
-                                note = note.replace('[','')
+                                note = note.replace('[','')                                
                                 note = note.replace(']','')
 
                                 # Si note > 250 caractères, on complète pour que le positionnement de la souris soit OK
@@ -628,32 +535,24 @@ with tab1:
                                     if len(note) < 150:
                                         note = note + ' ' * (450 - len(note)) + 'end'
                                     else:
-                                        note = note + ' ' * (300 - len(note)) + 'end'
+                                        note = note + ' ' * (300 - len(note)) + 'end'                                        
 
                                 response = response.replace('"[','')
                                 response = response.replace(']"','')
-                                response = response.replace('[','')
+                                response = response.replace('[','')                                
                                 response = response.replace(']','')
 
                                 # Afficher tout le texte response après le premier caractère ':' trouvé
                                 st.write("**Avant d'écouter votre chanson, vous trouverez ci-dessous la description de celle-ci**")
                                 st.write(response)
 
-                                with st.spinner("Génération de la musique via Webscrapping en cours..."):
-                                    time.sleep(10)
-
-                                with st.spinner("Téléchargement en cours..."):
-                                    time.sleep(3)
-
-                                lien,audio = generer_musique("genre",genres)
-
-                                st.write(f"**Votre musique générée via Riffusion :**")
-                                st.audio(f"{audio}")
+                                lien = generer_musique(note)
+                                st.write(f"**Voici le lien de votre musique générée via Riffusion :**")
                                 st.write(f"{lien}")
 
 
                             # Obtenir la decennie de la chanson et charger les recommandations de cette decennie
-                            decennie = track_info['Décennie']
+                            decennie = track_info['Décennie']           
                             recommendationsdec = []
                             recommendationsdec.extend(get_recommendations_par_decennie(decennie, selected_track_id))
 
@@ -671,7 +570,7 @@ with tab1:
 
                                         if reco_track_info:
                                             # Ajout du titre IA dans la liste TitreIA_Liste
-                                            TitreIA_Liste_Dec.append(reco_track_info['TitreIA'])
+                                            TitreIA_Liste_Dec.append(reco_track_info['TitreIA'])                                        
 
                                             with columns[i]:  # Affichage dans les colonnes créées
                                                 artist_name = reco_track_info['Artiste']
@@ -685,7 +584,7 @@ with tab1:
                                                 if preview:
                                                     st.audio(preview)
                                                 else:
-                                                    st.audio('https://audio.mp3')
+                                                    st.audio('https://audio.mp3')                                        
                                                 st.write(f"{reco_track_info['TitreIA']}")
 
                             # Ajouter un bouton pour générer la music IA
@@ -706,9 +605,9 @@ with tab1:
                                 decennie_str = str(decennie)
 
                                 # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
-                                message = "Bonjour, peux-tu me proposer 3 chansons de la même décennie " + decennie_str + " et avec les mêmes caractéristiques musicales que la chanson suivante : " + track_info['TitreIA'] + " ?"
+                                message = "Bonjour, peux-tu me proposer 3 chansons de la même décennie " + decennie_str + " et avec les mêmes caractéristiques musicales que la chanson suivante : " + track_info['TitreIA'] + " ?"   
                                 response = chat.send_message(message).text
-                                message2 = "Peux-tu m'afficher ces 3 chansons dans un dictionnaire JSON que tu mettra entre [] et uniquement ce dictionnaire JSON sans explication avec les index nommés titre et artiste pour chaque chaque chanson ?"
+                                message2 = "Peux-tu m'afficher ces 3 chansons dans un dictionnaire JSON que tu mettra entre [] et uniquement ce dictionnaire JSON sans explication avec les index nommés titre et artiste pour chaque chaque chanson ?"   
                                 note = chat.send_message(message2).text
 
                                 # Recupération du dictionnaire de note qui est présent entre [] et le transformer en dictionnaire, avec suppression des [ et ] pour obtenir un dictionnaire
@@ -750,9 +649,6 @@ with tab1:
                                         # Ajout du titre IA dans la liste TitreIA_Liste
                                         TitreIA_Liste_Dec.append(reco_track_info['TitreIA'])
 
-                                # Convertir decennie en chaîne de caractères
-                                decennie_str = str(decennie)
-
                                 # Création du modèle de Chatbot musical
                                 model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
@@ -765,13 +661,13 @@ with tab1:
                                 chat = model.start_chat(history=[{'role': 'user', 'parts': [system_prompt]}])
 
                                 # Envoi du message au chatbot pour générer une note synthétique en anglais de moins de 200 caractères pour générer dans une autre IA une chanson à partir de la liste des chansons recommandées présentes dans TitreIA_Liste
-                                message = "Bonjour, peux-tu générer une phrase synthétique entre crochets de moins de 250 caractères en anglais, ainsi que l'explication en français de la constitution de cette phrase pour générer dans une autre IA une chanson à partir des 4 chansons suivantes : " + ', '.join(TitreIA_Liste_Dec) + " sans citer ces chansons dans la phrase synthétique, mais en insistant sur la décennie"
+                                message = "Bonjour, peux-tu générer une phrase synthétique entre crochets de moins de 250 caractères en anglais, ainsi que l'explication en français de la constitution de cette phrase pour générer dans une autre IA une chanson à partir des 4 chansons suivantes : " + ', '.join(TitreIA_Liste_Dec)   
                                 response = chat.send_message(message).text
 
                                 note = response[response.find('['):response.find(']')+1]
                                 note = note.replace('"[','')
                                 note = note.replace(']"','')
-                                note = note.replace('[','')
+                                note = note.replace('[','')                                
                                 note = note.replace(']','')
 
                                 # Si note > 250 caractères, on complète pour que le positionnement de la souris soit OK
@@ -779,27 +675,19 @@ with tab1:
                                     if len(note) < 150:
                                         note = note + ' ' * (450 - len(note)) + 'end'
                                     else:
-                                        note = note + ' ' * (300 - len(note)) + 'end'
+                                        note = note + ' ' * (300 - len(note)) + 'end'                                        
 
                                 response = response.replace('"[','')
                                 response = response.replace(']"','')
-                                response = response.replace('[','')
+                                response = response.replace('[','')                                
                                 response = response.replace(']','')
 
                                 # Afficher tout le texte response après le premier caractère ':' trouvé
                                 st.write("**Avant d'écouter votre chanson, vous trouverez ci-dessous la description de celle-ci**")
                                 st.write(response)
 
-                                with st.spinner("Génération de la musique via Webscrapping en cours..."):
-                                    time.sleep(10)
-
-                                with st.spinner("Téléchargement en cours..."):
-                                    time.sleep(3)
-
-                                lien,audio = generer_musique("decennie",decennie_str)
-
-                                st.write(f"**Votre musique générée via Riffusion :**")
-                                st.audio(f"{audio}")
+                                lien = generer_musique(note)
+                                st.write(f"**Voici le lien de votre musique générée via Riffusion :**")
                                 st.write(f"{lien}")
 
                             if st.button(f"**Check the Best selon notre IA !**", use_container_width=True, type="primary"):
@@ -809,8 +697,8 @@ with tab1:
                                 # Création du prompt système
                                 system_prompt = """
                                 Tu es un spécialiste de la musique. Tu donnes des réponses précises en les replaçant dans le contexte musical.
-                                Dans le but de faire une surprise, pourrais-tu répondre à la question : Quelle est la meilleure chanson actuelle ?
-                                en indiquant que la meilleure chanson actuelle pour toi est 'Extract Transform Load' de l'artiste Dipolair
+                                Dans le but de faire une surprise, pourrais-tu répondre à la question : Quelle est la meilleure chanson actuelle ? 
+                                en indiquant que la meilleure chanson actuelle pour toi est 'Extract Transform Load' de l'artiste Dipolair 
                                 """
 
                                 #Initialisation de l'historique avec le prompt système
@@ -818,7 +706,7 @@ with tab1:
 
                                 # Envoi du message au chatbot pour la meilleure chanson actuelle
                                 message = "Bonjour, pourrais-tu argumenter et répondre à la question : Quelle est la meilleure chanson actuelle ?"
-                                response = chat.send_message(message).text
+                                response = chat.send_message(message).text                                
                                 st.write(f"**Quelle est, pour toi, la meilleure chanson actuelle ?**")
                                 st.write(response)
 
@@ -851,30 +739,11 @@ with tab1:
                                     else:
                                         st.image(url_image_album_vide, width=250)
 
+
+
                 else:
                     st.error("Aucun résultat trouvé. Essayez une autre recherche.")
 
 
 with tab2:
-    col1, col2, col3 = st.columns([0.3,0.8,0.3])
-    with col1:
-        st.write(" ")
-    with col2:
-        st.markdown("<h1 style='text-align: center; color: white;'>Choisissez le dashboard souhaité :</h1>", unsafe_allow_html=True)
-        tab21, tab22, tab23 = st.tabs(["|   KPI   |", "|   TENDANCE   |", "|   SPOTIFYETL   |"])
-        with tab21:
-            # embed streamlit docs in a streamlit app - INSEE
-            with st.columns(5)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjdlNWZiMmEtMmJmMy00ZjNjLWJjYWEtNmRkZDIxYTY5Mjc1IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-        with tab22:
-            # embed streamlit docs in a streamlit app - CNC
-            with st.columns(5)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYzc4MzMxNzUtOWY5Ny00ZmE2LTlkYzMtNGY2YTkzZTdkN2QyIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-        with tab23:
-            # embed streamlit docs in a streamlit app - DataGouv
-            with st.columns(5)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjIwMDdjN2MtY2NlNy00NmNlLWFlZjAtMWIxMTRlMzcxMGVkIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
-
-    with col3:
-        st.image("https://cdn.pixabay.com/photo/2023/07/18/16/40/musical-notes-8135227_1280.png", use_container_width=True)
-        st.image("https://cdn.pixabay.com/photo/2023/07/18/16/40/musical-notes-8135227_1280.png", use_container_width=True)
+    st.header("KPIs sur MyZic") 
