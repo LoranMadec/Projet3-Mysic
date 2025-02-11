@@ -355,7 +355,7 @@ def get_base64_of_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode()
 # Charger l'image
-image_base64 = get_base64_of_image("image/banniere.png")
+image_base64 = get_base64_of_image("./image/banniere.png")
 # Code HTML/CSS pour afficher la bannière
 custom_html = f"""
 <div class="banner">
