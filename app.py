@@ -856,25 +856,23 @@ with tab1:
 
 
 with tab2:
-    col1, col2, col3 = st.columns([0.3,0.8,0.3])
+    col1, col2 = st.columns([0.9,0.2])
     with col1:
-        st.write(" ")
-    with col2:
-        st.markdown("<h1 style='text-align: center; color: white;'>Choisissez le dashboard souhaité :</h1>", unsafe_allow_html=True)
-        tab21, tab22, tab23 = st.tabs(["|   KPI   |", "|   TENDANCE   |", "|   SPOTIFYETL   |"])
+#        st.markdown("<h1 style='text-align: center; color: white;'>Choisissez le dashboard souhaité :</h1>", unsafe_allow_html=True)
+        tab21, tab22, tab23 = st.tabs(["|   KPI   |", "|   MUSICALITE   |", "|   SPOTIFY   |"])
         with tab21:
-            # embed streamlit docs in a streamlit app - INSEE
-            with st.columns(5)[0]:
+            # embed streamlit docs in a streamlit app - KPI
+#            with st.columns(2)[0]:
                 components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjdlNWZiMmEtMmJmMy00ZjNjLWJjYWEtNmRkZDIxYTY5Mjc1IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
         with tab22:
-            # embed streamlit docs in a streamlit app - CNC
-            with st.columns(5)[0]:
+            # embed streamlit docs in a streamlit app - MUSICALITE
+#            with st.columns(2)[0]:
                 components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYzc4MzMxNzUtOWY5Ny00ZmE2LTlkYzMtNGY2YTkzZTdkN2QyIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
         with tab23:
-            # embed streamlit docs in a streamlit app - DataGouv
-            with st.columns(5)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjIwMDdjN2MtY2NlNy00NmNlLWFlZjAtMWIxMTRlMzcxMGVkIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
+            # embed streamlit docs in a streamlit app - SPOTIFY
+#            with st.columns(2)[0]:
+                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiZGZjNWFhYzYtOGZmMy00NjQzLWE0MzctNTJmOWZmMzExZDY2IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
 
-    with col3:
+    with col2:
         st.image("https://cdn.pixabay.com/photo/2023/07/18/16/40/musical-notes-8135227_1280.png", use_container_width=True)
         st.image("https://cdn.pixabay.com/photo/2023/07/18/16/40/musical-notes-8135227_1280.png", use_container_width=True)
