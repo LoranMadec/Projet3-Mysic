@@ -863,11 +863,11 @@ with tab2:
         with tab21:
             # embed streamlit docs in a streamlit app - KPI
 #            with st.columns(2)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYjdlNWZiMmEtMmJmMy00ZjNjLWJjYWEtNmRkZDIxYTY5Mjc1IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
+                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYmNlZDVmMjgtNWZlMS00MjUxLTk5NjctZTlkOWU2ZDQwMDNmIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
         with tab22:
             # embed streamlit docs in a streamlit app - MUSICALITE
 #            with st.columns(2)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYzc4MzMxNzUtOWY5Ny00ZmE2LTlkYzMtNGY2YTkzZTdkN2QyIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
+                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiNzJhYmM1NjctMGE4My00N2U5LTg2YTEtY2FiMzlmYWVjMjE4IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
         with tab23:
             # embed streamlit docs in a streamlit app - SPOTIFY
 #            with st.columns(2)[0]:
