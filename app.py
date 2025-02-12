@@ -863,7 +863,7 @@ with tab2:
         with tab21:
             # embed streamlit docs in a streamlit app - KPI
 #            with st.columns(2)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYmNlZDVmMjgtNWZlMS00MjUxLTk5NjctZTlkOWU2ZDQwMDNmIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
+                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiZTUwMTMyN2YtOTNhZS00ZWEwLTgxMjMtZTMwNjA5YTc5NzY3IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
         with tab22:
             # embed streamlit docs in a streamlit app - MUSICALITE
 #            with st.columns(2)[0]:
@@ -871,7 +871,7 @@ with tab2:
         with tab23:
             # embed streamlit docs in a streamlit app - SPOTIFY
 #            with st.columns(2)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiZGZjNWFhYzYtOGZmMy00NjQzLWE0MzctNTJmOWZmMzExZDY2IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
+                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiM2M5NTUxNzYtODU3OS00MDg4LWJlYzMtMTY3NWRkZDVhMGUwIiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
 
     with col2:
         st.image("https://cdn.pixabay.com/photo/2023/07/18/16/40/musical-notes-8135227_1280.png", use_container_width=True)
