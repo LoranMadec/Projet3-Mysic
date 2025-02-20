@@ -871,7 +871,7 @@ with tab2:
         with tab23:
             # embed streamlit docs in a streamlit app - SPOTIFY
 #            with st.columns(2)[0]:
-                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiYzM2NmQ1MDktYjQxYi00ZDU3LTlmZjQtNTYyOTAwODAzYTg5IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
+                components.iframe("https://app.powerbi.com/view?r=eyJrIjoiOWQwY2UyNWUtNGUzYi00YzZlLTkwYTktODUzMjRlNGZjNzQ1IiwidCI6ImYyODRkYTU4LWMwOTMtNGZiOS1hM2NiLTAyNDNjM2EwMTRhYyJ9", width=1024, height=804)
 
     with col2:
         st.image("https://cdn.pixabay.com/photo/2023/07/18/16/40/musical-notes-8135227_1280.png", use_container_width=True)
